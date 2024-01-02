@@ -1,0 +1,333 @@
+# Code für BayesFlow (Verwendung Prior 2)
+from tqdm.autonotebook import tqdm
+from functools import partial
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+import amici
+import amici.plotting
+import libsbml
+import logging
+import sys
+import os
+import importlib
+import petab
+import csv
+import pandas as pd
+import time
+from pprint import pprint
+import math
+
+import bayesflow.diagnostics as diag
+from bayesflow.amortizers import AmortizedPosterior
+from bayesflow.networks import InvertibleNetwork
+from bayesflow.simulation import GenerativeModel, Prior, Simulator
+from bayesflow.trainers import Trainer
+from itertools import islice
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import gaussian_kde
+from scipy.optimize import curve_fit
+import statistics
+
+## Trainingsphase
+
+# Festlegung der Prior, für jeden Parameter eine uniforme Verteilung
+def model_prior_log():
+    sample_pE = np.random.uniform(low=-11, high=0, size=1) 
+    sample_beta = np.random.uniform(low=-10, high=-2, size=1) 
+    sample_kE = np.random.uniform(low=-9, high=-1, size=1) 
+    sample_delta = np.random.uniform(low=-4, high=3, size=1) 
+    sample_kvg = np.random.uniform(low=-12, high=0, size=1) 
+    sample_kvm = np.random.uniform(low=-7, high=1, size=1) 
+    sample_cV = np.random.uniform(low=-11, high=-2, size=1)  
+    sample_V_0 = np.random.uniform(low=0, high=5, size=1) 
+    sample_Ep_0 = np.random.uniform(low=1, high=8, size=1) 
+    
+    all_samples = np.concatenate([
+        sample_pE, sample_beta, sample_kE, sample_delta,
+        sample_kvg, sample_kvm, sample_cV, sample_V_0, sample_Ep_0,
+    ])
+    return all_samples
+ 
+# Prior-Funktion in BayesFlow   
+prior = Prior(prior_fun=model_prior_log, param_names=[r"$pE$",r"$beta$",r"$kE$",r"$delta$",r"$kvg$",r"$kvm$",r"$cV$",r"$V_0$",r"$Ep_0$"])
+prior_means, prior_stds = prior.estimate_means_and_stds()
+
+# Modell und Messungen einlesen
+sbml_file = '/home/user/IAV_model.xml'
+folder_base = '/home/user/Downloads/' 
+!ls -l $folder_base                   
+measurements = pd.read_csv('/home/user/Downloads/measurements.tsv', sep='\t') 
+
+# Sigma für Störung berechnen
+m_mean = measurements['measurement'].mean()
+sigma = math.sqrt((((measurements['measurement']-m_mean)**2).sum())/measurements['measurement'].count())
+
+# Festlegung des Modells
+model_name = 'IAV_response'
+model_output_dir = model_name
+sbml_importer = amici.SbmlImporter(sbml_file)
+
+fixedParameters = ['PrV']
+
+observables = {
+    'observable_V':{'name': 'Viruslast','formula': 'V'},
+}
+
+noise = {
+    'observable_V': sigma*np.random.randn(),
+}
+
+sbml_importer.sbml2amici(model_name,
+                         model_output_dir,
+                         verbose=logging.INFO,
+                         observables=observables,
+                         constant_parameters=fixedParameters)
+
+sys.path.insert(0, os.path.abspath(model_output_dir))
+model_module = importlib.import_module(model_name)
+
+amici_model = model_module.getModel()
+
+solver = amici_model.getSolver()
+
+# Zeitpunkte festlegen, wann AMICI das Modell löst 
+amici_model.setTimepoints([0,0.125,0.25,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,8,9,10,12,14])
+
+# Funktion ode_solver, die Differentialgleichungen löst und Datensätze der Viruslast erzeugt
+def ode_solver(params):
+    params = 10**params
+    amici_model.setParameters(params)
+    rdatas = amici.runAmiciSimulation(amici_model, solver)
+    return rdatas['y']
+
+# Simulator, Generative Model zusammenlegen     
+simulator = Simulator(simulator_fun=ode_solver)
+model = GenerativeModel(prior, simulator, name="linear_ODE_generator")
+
+# Zusatz: Plots der simulierten Datensätze
+sim_data = model(8)["sim_data"] #(8) für 8 Simulationen
+fig, axarr = plt.subplots(2, 4, figsize=(16, 6))
+ax = axarr.flat
+
+for i, data in enumerate(sim_data):
+    x = [0,0.125,0.25,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,8,9,10,12,14]
+    ax[i].plot(x, data[:, 0], label="V", color="blue", alpha=0.8)
+    ax[i].set_ylabel("Virusload")
+    ax[i].grid(alpha=0.5)
+    ax[i].legend()
+    ax[i].set_title(f"Simulation #{i+1}")
+
+plt.tight_layout()
+plt.show()
+
+# Summary- und Inference Network
+class CustomLSTM(tf.keras.Model):
+    def __init__(self, hidden_size=128, summary_dim=32): 
+        super().__init__()
+        self.LSTM = tf.keras.Sequential(
+            [
+                tf.keras.layers.LSTM(hidden_size),
+                tf.keras.layers.Dense(summary_dim, activation="relu"),
+            ]
+        )
+
+    def call(self, x, **kwargs):
+        out = self.LSTM(x)
+        return out
+        
+summary_net = CustomLSTM()
+
+COUPLING_NET_SETTINGS = {
+    "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"), 
+    "num_dense": 2, #2 layer nochmal für alle 6 coupling layer
+    "dropout": False,
+}
+
+inference_net = InvertibleNetwork(num_params=9, num_coupling_layers=6, coupling_settings=COUPLING_NET_SETTINGS)
+
+# Zusammenführen im Amortizer
+amortizer = AmortizedPosterior(inference_net, summary_net, name="linear_ODE_amortizer")
+
+data = model(batch_size=500) #batch_size: Anzahl der Samples, die durch das Netzwerk gehen, Zeile nur wichtig für das Normalisieren
+sim_mean =  2.737
+sim_std = 4.098 
+sim_median = 3.034
+
+# Funktion configure_input zum Normalisieren und Entfernen von bestimmten Werten
+def configure_input(forward_dict):
+    out_dict = {}
+
+    # Normalisierung Datensätze
+    sim = forward_dict["sim_data"].astype(np.float32)
+    sim_data = np.log10(sim)
+    sim_data = np.where(np.isnan(sim_data), -20, sim_data)
+    norm_data = (sim_data - sim_mean) / sim_std  #Standardisierung wird durchgeführt für Mittelwert 0 und Standardabweichung 1
+
+    # Normalisierung Prior
+    params = forward_dict["prior_draws"].astype(np.float32)
+    norm_params = (params - prior_means) / prior_stds
+
+    # Entferne NaN, inf und -inf Werte
+    keep_idx = np.all(np.isfinite(norm_data), axis=(1, 2))
+    if not np.all(keep_idx):
+        print("Invalid value encountered...removing from batch")
+
+    out_dict["summary_conditions"] = norm_data[keep_idx] #simulierte Daten, simulierte Daten hängen von prior draws ab
+    out_dict["parameters"] = norm_params[keep_idx]       # prior draws
+
+    return out_dict
+
+# Alles Zusammenfügen im Trainer    
+trainer = Trainer(amortizer=amortizer, generative_model=model, configurator=configure_input, memory=True)
+
+# Trainieren der Netzwerke mit Zeitmessung
+start = time.time()
+history = trainer.train_online(epochs=500, iterations_per_epoch=1000, batch_size=128)   
+end = time.time()
+print("Time(in seconds):",end-start)
+
+# Loss History plotten
+fig_loss = diag.plot_losses(trainer.loss_history.get_plottable())
+
+# Loss History ohne Spitzen plotten
+loss  = trainer.loss_history.get_plottable().to_numpy()
+loss_without_high_values = np.clip(loss, None, 50)
+plt.plot(loss_without_high_values)
+
+# Niedrigsten Loss Wert ausgeben
+print(loss[-1])
+
+# SBC plotten
+fig_SBC = trainer.diagnose_sbc_histograms()
+
+## Inference Phase
+
+# Datensatz mit log10-Werten des Mittelwertes zu jedem Zeitpunkt der Messungen erstellen
+df = pd.DataFrame(measurements)
+mean_measures = df.groupby('time')['measurement'].mean().reset_index()
+mean_measures = mean_measures.drop('time',axis=1)
+mean_measures = mean_measures.values #numpy array mit 22 Mittelwerten für jeden Zeitpunkt
+mean_measures = np.log10(mean_measures)
+
+# Normalisieren der Messungen
+norm_measures = (mean_measures - sim_mean) / sim_std
+measures_numpy = norm_measures[np.newaxis, :, :] # nur wichtig, um in richtige Form zu bringen
+
+# Ziehen der 1000 Posterior-Sampel mit Zeitmessung
+start = time.time()
+post_samples = amortizer.sample({"summary_conditions": measures_numpy}, 1000)
+end = time.time()
+print("Time(in seconds):",end-start)
+
+# Zurücknormalisieren der Sampels
+post_samples = prior_means + post_samples * prior_stds
+
+## Graphiken erstellen/ Ergebnisse
+
+# Für jeden Parameter Datensatz mit den Posterior-Werten erstellen
+log_pE= post_samples[:,0]
+log_beta = post_samples[:,1]
+log_kE = post_samples[:,2]
+log_delta = post_samples[:,3]
+log_kvg = post_samples[:,4]
+log_kvm = post_samples[:,5]
+log_cV = post_samples[:,6]
+log_V_0 = post_samples[:,7]
+log_Ep_0 = post_samples[:,8]
+
+# Plotten der Verteilungsfunktionen
+parameters = [log_pE, log_beta, log_kE, log_delta, log_kvg, log_kvm, log_cV, log_V_0, log_Ep_0]
+labels = ['pE','beta','kE','delta','kvg','kvm','cV','V_0','Ep_0']
+
+fig, axes = plt.subplots(3,3, figsize=(10,10))
+plt.subplots_adjust(wspace=0.3, hspace=0.3)
+
+for i in range(9):
+    density  = gaussian_kde(parameters[i])
+    x_values = np.linspace(min(parameters[i]), max(parameters[i]), 1000)
+    lab = labels[i]
+    axes.flat[i].plot(x_values, density(x_values), label = lab)
+    axes.flat[i].hist(parameters[i], bins=50, density=True, alpha=0.5, edgecolor='black', orientation='vertical')
+    axes.flat[i].set_title(lab, pad=8)
+    axes.flat[i].set_ylabel('Dichte')
+    axes.flat[i].legend()
+
+# 1000 Datensätze erzeugen (für jeden Parametervektor), und an jedem Zeitpunkt den Median berechnen,
+# sowie das untere 2,5 und obere 97,5 Quantil
+datasets_list = []
+
+for i in range(1000):
+    samples = post_samples_2[i,:]
+    dataset = ode_solver(samples)
+    datasets_list.append(dataset)
+    
+datasets = np.array(datasets_list)
+
+median_per_timepoint = np.median(datasets, axis=0)
+lower_percentile_per_timepoint = np.percentile(datasets, 2.5, axis=0)
+upper_percentile_per_timepoint = np.percentile(datasets, 97.5, axis=0)
+
+# Logarithmierte Messungen und Zeitpunkte einlesen (zum Plotten)
+measurements_log = pd.read_csv('/home/user/Downloads/measurements2.tsv', sep='\t')
+
+measurements_log = measurements_log['measurement']
+measurements_log = measurements_log.array.reshape((-1, 1))
+measurements_numpy = measurements_log.to_numpy()
+
+time_points = measurements_log['time']
+time_points = time_points.array.reshape((-1, 1))
+time_points = time_points.to_numpy()
+
+# Unterschiedliche Zeipunkte herausfiltern und in Datensatz mit zugehörigen Messungen zusammenfügen
+different_times = np.unique(time_points)
+final_data = [measurements_numpy[time_points.flatten() == time] for time in different_times]
+
+# Mittelwerte der Messungen ausrechnen (für Fehlerbalken im Plot)
+mean_values = []
+for sequence in final_data:
+    mean_value = sum(sequence) / len(sequence) if len(sequence) > 0 else 0
+    mean_values.append(mean_value)
+    
+# Median - und Quantilwerte in log10-Skala umrechnen
+median_log = np.log10(median_per_timepoint)
+lower_percentile_log = np.log10(lower_percentile_per_timepoint)
+upper_percentile_log = np.log10(upper_percentile_per_timepoint)
+
+# Plotten der simulierten Viruslast mit den echten Messwerten
+plt.figure(figsize=(8, 6))
+x = [0,0.125,0.25,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,8,9,10,12,14] #22, weil 22 verschiedene Zeitpunkte
+
+for i, (time, data) in enumerate(zip(different_times, final_data)): 
+    plt.scatter([time]*len(data), data, s=25, c='red')
+
+plt.plot(x, median_log )
+plt.xlabel('Time (day)')
+plt.ylabel('Viruslast (log$_{10}$)')
+plt.show()
+
+# In Array umwandeln und Dimensionen anpassen
+mean_values_np = np.array(mean_values)
+mean_values_np = np.squeeze(mean_values_np)
+
+# Umwandeln in eindimensionales Array
+lower_percentile_log = np.ravel(lower_percentile_log)
+upper_percentile_log = np.ravel(upper_percentile_log)
+
+# Plotten der Messungen mit Fehlerbalken, sowie unteres und oberes Quantil
+plt.figure(figsize=(8, 6))
+x = [0,0.125,0.25,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,8,9,10,12,14] #22, weil 22 verschiedene Zeitpunkte
+
+plt.errorbar(x, mean_values_np, yerr = standard_deviation, fmt='o', capsize=5)
+
+plt.plot(x, median_log )
+plt.plot(x, loqua_log)
+plt.plot(x, upqua_log)
+plt.fill_between(x,ravel_lowper,ravel_highper, color='steelblue', alpha=0.3)
+plt.xlabel('Time (day)')
+plt.ylabel('Viruslast (log$_{10}$)')
+plt.show()
