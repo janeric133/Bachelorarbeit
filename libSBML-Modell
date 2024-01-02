@@ -1,0 +1,314 @@
+# Code für das libSBML-Modell
+import sys
+from libsbml import *
+import libsbml
+
+def check(value, message):
+   """If 'value' is None, prints an error message constructed using
+   'message' and then exits with status code 1.  If 'value' is an integer,
+   it assumes it is a libSBML return status code.  If the code value is
+   LIBSBML_OPERATION_SUCCESS, returns without further action; if it is not,
+   prints an error message constructed using 'message' along with text from
+   libSBML explaining the meaning of the code, and exits with status code 1.
+   """
+   if value == None:
+     raise SystemExit('LibSBML returned a null value trying to ' + message + '.')
+   elif type(value) is int:
+     if value == LIBSBML_OPERATION_SUCCESS:
+       return
+     else:
+       err_msg = 'Error encountered trying to ' + message + '.' \
+                 + 'LibSBML returned error code ' + str(value) + ': "' \
+                 + OperationReturnValue_toString(value).strip() + '"'
+       raise SystemExit(err_msg)
+   else:
+     return
+     
+ 
+try:
+ document = SBMLDocument(3, 1)
+except ValueError:
+ raise SystemExit('Could not create SBMLDocumention object')
+ 
+# kreiere Model
+IAV_model = document.createModel()
+check(IAV_model,                              'create model')
+
+# kreiere Kompartment
+cell = IAV_model.createCompartment()
+check(cell,                                 'create compartment')
+check(cell.setId('cell'),                   'set compartment id')
+check(cell.setConstant(True),               'set compartment "constant"')
+check(cell.setSize(1),                      'set compartment "size"')
+check(cell.setSpatialDimensions(3),         'set compartment dimensions')
+check(cell.setUnits('litre'),               'set compartment size units')
+
+# kreiere Spezien
+Ep = IAV_model.createSpecies()
+check(Ep,                                 'create species s1')
+check(Ep.setId('Ep'),                     'set species Ep id')
+check(Ep.setCompartment('cell'),          'set species Ep compartment')
+check(Ep.setConstant(False),              'set "constant" attribute on Ep')
+check(Ep.setInitialAmount(0),             'set initial amount for s1')
+check(Ep.setBoundaryCondition(False),     'set "boundaryCondition" on s1')
+check(Ep.setHasOnlySubstanceUnits(True),  'set "hasOnlySubstanceUnits" on s1') # nur Anzahl (Moleküle)
+
+Ep2 = IAV_model.createSpecies()
+check(Ep2,                                 'create species s2')
+check(Ep2.setId('Ep2'),                     'set species s2 id')
+check(Ep2.setCompartment('cell'),            'set species s2 compartment')
+check(Ep2.setConstant(False),              'set "constant" attribute on s2')
+check(Ep2.setInitialAmount(0),             'set initial amount for s2')
+check(Ep2.setBoundaryCondition(False),     'set "boundaryCondition" on s2')
+check(Ep2.setHasOnlySubstanceUnits(True), 'set "hasOnlySubstanceUnits" on s2')
+
+V = IAV_model.createSpecies()
+check(V,                                 'create species V')
+check(V.setId('V'),                      'set species V id')
+check(V.setCompartment('cell'),          'set species V compartment')
+check(V.setConstant(False),              'set "constant" attribute on V')
+check(V.setInitialAmount(0),             'set initial amount for V')
+check(V.setBoundaryCondition(False),     'set "boundaryCondition" on V')
+check(V.setHasOnlySubstanceUnits(False), 'set "hasOnlySubstanceUnits" on V')
+
+# Parameter
+pE = IAV_model.createParameter()
+check(pE,                                 'create parameter pE')
+check(pE.setId('pE'),                     'set parameter pE id')
+check(pE.setConstant(True),               'set parameter pE "constant"')
+check(pE.setValue(8.6e-04),                     'set parameter pE value')
+
+beta = IAV_model.createParameter()
+check(beta,                                 'create parameter beta')
+check(beta.setId('beta'),                   'set parameter beta id')
+check(beta.setConstant(True),               'set parameter beta "constant"')
+check(beta.setValue(5.1e-06),                     'set parameter beta value')
+
+kE = IAV_model.createParameter()
+check(kE,                                 'create parameter kE')
+check(kE.setId('kE'),                     'set parameter kE id')
+check(kE.setConstant(True),               'set parameter kE "constant"')
+check(kE.setValue(1.4e-05),                     'set parameter kE value')
+
+delta = IAV_model.createParameter()
+check(delta,                              'create parameter delta')
+check(delta.setId('delta'),               'set parameter delta id')
+check(delta.setConstant(True),            'set parameter delta "constant"')
+check(delta.setValue(1.2),                  'set parameter delta value')
+
+kvg = IAV_model.createParameter()
+check(kvg,                                 'create parameter kvg')
+check(kvg.setId('kvg'),                    'set parameter kvg id')
+check(kvg.setConstant(True),               'set parameter kvg "constant"')
+check(kvg.setValue(4.5e-08),                     'set parameter kvg value')
+
+kvm = IAV_model.createParameter()
+check(kvm,                                 'create parameter kvm')
+check(kvm.setId('kvm'),                    'set parameter kvm id')
+check(kvm.setConstant(True),               'set parameter kvm "constant"')
+check(kvm.setValue(7.8e-02),                     'set parameter kvm value')
+
+cV = IAV_model.createParameter()
+check(cV,                                  'create parameter cV')
+check(cV.setId('cV'),                      'set parameter cV id')
+check(cV.setConstant(True),                'set parameter cV "constant"')
+check(cV.setValue(5.5e-06),                      'set parameter cV value')
+
+V_0 = IAV_model.createParameter()
+check(V_0,                                 'create parameter V_0')
+check(V_0.setId('V_0'),                    'set parameter V_0 id')
+check(V_0.setConstant(True),               'set parameter V_0 "constant"')
+check(V_0.setValue(1473),                     'set parameter V_0 value')
+
+Ep_0 = IAV_model.createParameter()
+check(Ep_0,                                 'create parameter Ep_0')
+check(Ep_0.setId('Ep_0'),                   'set parameter Ep_0 id')
+check(Ep_0.setConstant(True),               'set parameter Ep_0 "constant"')
+check(Ep_0.setValue(2.4e+05),                     'set parameter Ep_0 value')
+
+PrV = IAV_model.createParameter()
+check(PrV,                                 'create parameter Pi')
+check(PrV.setId('PrV'),                     'set parameter Pi id')
+check(PrV.setConstant(True),               'set parameter Pi "constant"')
+check(PrV.setValue(100),                     'set parameter Pi value')
+
+TE = IAV_model.createParameter()
+check(TE,                                 'create parameter TE')
+check(TE.setId('TE'),                     'set parameter TE id')
+check(TE.setConstant(False),               'set parameter TE "constant"')
+check(TE.setValue(0),                     'set parameter TE value')
+
+# stückweise Funktion für CD8+ T-Zellen
+formula1 = 'piecewise(0, time < 5, ((7/68)*time-(35/68))*10000, time<7.72,((7/19)*time-(1218/475))*10000,time<9.43,((25/13)*time-(5598/325))*10000,time<11.77,((-379/208)*time+(1343/50))*10000,time<13.85,((-117/560)*time+4.51)*10000,time<19.45,((5/444)*time+(2051/8880))*10000,time<23.89,((-19/730)*time+1.12)*10000,time<31.19,0)'
+
+assignment1 = IAV_model.createAssignmentRule()
+assignment1.setId('assignment1')
+assignment1.setName('TE_concentration')
+assignment1.setVariable('TE')
+math_ast = libsbml.parseL3Formula(formula1)
+assignment1.setMath(math_ast)
+
+Ag = IAV_model.createParameter()
+check(Ag,                                 'create parameter Ag')
+check(Ag.setId('Ag'),                     'set parameter Ag id')
+check(Ag.setConstant(False),               'set parameter Ag "constant"')
+check(Ag.setValue(0),                     'set parameter Ag value')
+
+# stückweise Funktion für IgG-Antikörper
+formula2 = 'piecewise(((16/587)*time)*100, time < 5.87, ((425/998)*time-(117/50))*100, time<15.85,((407/408)*time-(57/5))*100,time<19.93,((29/781)*time+7.74)*100,time<27.74,((-358/3385)*time+11.7)*100,time<61.59,((-169/2234)*time+9.85)*100,time<83.93,0)'
+
+assignment2 = IAV_model.createAssignmentRule()
+assignment2.setId('assignment2')
+assignment2.setName('Ag_concentration')
+assignment2.setVariable('Ag')
+math_ast = libsbml.parseL3Formula(formula2)
+assignment2.setMath(math_ast)
+
+
+Am = IAV_model.createParameter()
+check(Am,                                 'create parameter Am')
+check(Am.setId('Am'),                     'set parameter Am id')
+check(Am.setConstant(False),               'set parameter Am "constant"')
+check(Am.setValue(0),                     'set parameter Am value')
+
+# stückweise Funktion für die IgM-Antikörper
+formula3 = 'piecewise(((-2/95)*time+0.17)*100, time < 3.8, ((207/440)*time-(17/10))*100, time<8.2,((-45/148)*time+4.65)*100,time<14.12,((-5/148)*time+(3097/3700))*100,time<20.04,0.16*100,time<35.07,((-5/4888)*time+0.196),time<83.95,0)'
+
+assignment3 = IAV_model.createAssignmentRule()
+assignment3.setId('assignment3')
+assignment3.setName('Am_concentration')
+assignment3.setVariable('Am')
+math_ast = libsbml.parseL3Formula(formula3)
+assignment3.setMath(math_ast)
+
+# Initialbedingungen
+initial_assignment1 = IAV_model.createInitialAssignment()
+initial_assignment1.setId('initial_assignment1')
+initial_assignment1.setName('Initial Ep')
+initial_assignment1.setSymbol('Ep')
+math_ast = libsbml.parseL3Formula('Ep_0')
+initial_assignment1.setMath(math_ast)
+
+initial_assignment2 = IAV_model.createInitialAssignment()
+initial_assignment2.setId('initial_assignment2')
+initial_assignment2.setName('Initial V')
+initial_assignment2.setSymbol('V')
+math_ast = libsbml.parseL3Formula('V_0')
+initial_assignment2.setMath(math_ast)
+
+
+# Reaktionen
+r1 = IAV_model.createReaction()
+check(r1,                                 'create reaction')
+check(r1.setId('r1'),                     'set reaction id')
+check(r1.setReversible(False),            'set reaction reversibility flag')
+check(r1.setFast(False),                  'set reaction "fast" attribute')
+
+species_ref2 = r1.createProduct()
+print(species_ref2) 
+check(species_ref2,                       'create product')
+check(species_ref2.setSpecies('Ep'),      'assign product species')
+check(species_ref2.setConstant(True),     'set "constant" on species ref 2')
+species_ref2.setStoichiometry(1)
+
+math_ast = parseL3Formula('pE * Ep')
+check(math_ast,                           'create AST for rate expression')
+
+kinetic_law = r1.createKineticLaw()
+check(kinetic_law,                        'create kinetic law')
+check(kinetic_law.setMath(math_ast),      'set math on kinetic law')
+
+r2 = IAV_model.createReaction()
+check(r2,                                 'create reaction')
+check(r2.setId('r2'),                     'set reaction id')
+check(r2.setReversible(False),            'set reaction reversibility flag')
+check(r2.setFast(False),                  'set reaction "fast" attribute')
+
+species_ref1 = r2.createReactant()
+check(species_ref1,                       'create reactant')
+check(species_ref1.setSpecies('Ep'),      'assign reactant species')
+check(species_ref1.setConstant(True),     'set "constant" on species ref 1')
+
+species_ref2 = r2.createProduct()
+check(species_ref2,                       'create product')
+check(species_ref2.setSpecies('Ep2'),     'assign product species')
+check(species_ref2.setConstant(True),     'set "constant" on species ref 2')
+species_ref2.setStoichiometry(1)
+
+species_ref2 = r2.createModifier()
+check(species_ref2,                        'create modifier')
+check(species_ref2.setSpecies('V'),        'assign modifier species')
+
+
+math_ast = parseL3Formula('beta * Ep * V')
+check(math_ast,                           'create AST for rate expression')
+
+kinetic_law = r2.createKineticLaw()
+check(kinetic_law,                        'create kinetic law')
+check(kinetic_law.setMath(math_ast),      'set math on kinetic law')
+
+r3 = IAV_model.createReaction()
+check(r3,                                 'create reaction')
+check(r3.setId('r3'),                     'set reaction id')
+check(r3.setReversible(False),            'set reaction reversibility flag')
+check(r3.setFast(False),                  'set reaction "fast" attribute')
+
+species_ref1 = r3.createReactant()
+check(species_ref1,                       'create reactant')
+check(species_ref1.setSpecies('Ep2'),      'assign reactant species')
+check(species_ref1.setConstant(True),     'set "constant" on species ref 1')
+species_ref1.setStoichiometry(1)
+
+math_ast = parseL3Formula('kE * Ep2 * TE + delta * Ep2')
+check(math_ast,                           'create AST for rate expression')
+
+kinetic_law = r3.createKineticLaw()
+check(kinetic_law,                        'create kinetic law')
+check(kinetic_law.setMath(math_ast),      'set math on kinetic law')
+
+r4 = IAV_model.createReaction()
+check(r4,                                 'create reaction')
+check(r4.setId('r4'),                     'set reaction id')
+check(r4.setReversible(False),            'set reaction reversibility flag')
+check(r4.setFast(False),                  'set reaction "fast" attribute')
+
+species_ref2 = r4.createProduct()
+check(species_ref2,                       'create product')
+check(species_ref2.setSpecies('V'),      'assign product species')
+check(species_ref2.setConstant(True),     'set "constant" on species ref 2')
+species_ref2.setStoichiometry(1)
+
+species_ref2 = r4.createModifier()
+check(species_ref2,                        'create modifier')
+check(species_ref2.setSpecies('Ep2'),      'assign modifier species')
+
+math_ast = parseL3Formula('PrV * Ep2')
+check(math_ast,                           'create AST for rate expression')
+
+kinetic_law = r4.createKineticLaw()
+check(kinetic_law,                        'create kinetic law')
+check(kinetic_law.setMath(math_ast),      'set math on kinetic law')
+
+r5 = IAV_model.createReaction()
+check(r5,                                 'create reaction')
+check(r5.setId('r5'),                     'set reaction id')
+check(r5.setReversible(False),            'set reaction reversibility flag')
+check(r5.setFast(False),                  'set reaction "fast" attribute')
+
+species_ref1 = r5.createReactant()
+check(species_ref1,                       'create reactant')
+check(species_ref1.setSpecies('V'),      'assign reactant species')
+check(species_ref1.setConstant(True),     'set "constant" on species ref 1')
+species_ref1.setStoichiometry(1)
+
+math_ast = parseL3Formula('cV * V + kvg * V * Ag + kvm * V * Am')
+check(math_ast,                           'create AST for rate expression')
+
+kinetic_law = r5.createKineticLaw()
+check(kinetic_law,                        'create kinetic law')
+check(kinetic_law.setMath(math_ast),      'set math on kinetic law')
+
+# kreiere xml-Format
+writeSBMLToString(document)
+
+libsbml.writeSBML(document, 'IAV_model.xml')
