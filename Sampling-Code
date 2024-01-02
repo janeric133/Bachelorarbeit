@@ -1,0 +1,52 @@
+# Code Sampling (adaptiver Metropolis-Algorithmus)
+import petab
+import logging
+import tempfile
+from pprint import pprint
+
+import amici
+import matplotlib as mpl
+import numpy as np
+import petab
+import time
+from IPython.display import Markdown, display
+
+import pypesto
+import pypesto.optimize as optimize
+import pypesto.petab
+import pypesto.sample as sample
+import pypesto.visualize as visualize
+import matplotlib.pyplot as plt
+import pypesto.store as store
+from pypesto.visualize.model_fit import visualize_optimized_model_fit
+
+# Petab-Datei importieren und Modell erschaffen
+petab_yaml = '/home/jfries1/Downloads/jfries1_2023.yaml'
+petab_problem = petab.Problem.from_yaml(petab_yaml)
+importer = pypesto.petab.PetabImporter(petab_problem)
+problem = importer.create_problem()
+
+# Scipy-Optimierung für Startsampel durchführen (100 Starte)
+optimizer = optimize.ScipyOptimizer()
+
+result_Scipy = optimize.minimize(
+    problem = problem, optimizer=optimizer, n_starts=100
+)
+
+# Visualisierung der Ergebnisse des Scipy-Optimierers
+plot_data = visualize_optimized_model_fit(
+    petab_problem = petab_problem, result=result_Scipy, pypesto_problem=problem
+)
+
+# Durchführung des adaptiven Metropolis-Algorithmus (1000 Sampels)
+sampler = sample.AdaptiveMetropolisSampler()
+
+result_adaptive = sample.sample(
+    problem, sampler=sampler, n_samples=1000, result=result_Scipy
+)
+
+# Geweke-Test durchführen, um zu schauen, wann stationäre Verteilung erreicht wird (Burn-In)
+sample.geweke_test(result)
+
+# Visualisierung der Sampels
+pypesto.visualize.sampling_fval_traces(result, full_trace = False)
